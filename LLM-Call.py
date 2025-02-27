@@ -57,7 +57,7 @@ def transcribe_audio_numpy(audio_data):
     """
     Transcribes audio data using Whisper.
     """
-    model_whisper = whisper.load_model("base")
+    model_whisper = whisper.load_model("tiny")
     result = model_whisper.transcribe(audio_data)
     print("Transcription completed.")
     return result["text"]
@@ -104,9 +104,20 @@ Generate a well-structured questionnaire based on the following content:
         do_sample=True
     )
     output_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return output_text.strip()   
+    print(output_text)
+    return clean_questionnaire(output_text)
 
-# Step 6: Full pipeline
+#Step 6: Clean output
+def clean_questionnaire(raw_text):
+    match = re.search(r"(### Multiple-Choice Questions.*?)$", raw_text, re.DOTALL)
+    if match:
+        cleaned_text = match.group(1) 
+    else:
+        cleaned_text = raw_text  
+    cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*(### Multiple-Choice Questions.*?$)", r"\1", cleaned_text, flags=re.DOTALL)
+    return cleaned_text.strip()
+
+# Step 7: Full pipeline
 def process_stream(video_url):
     print("Streaming audio...")
     audio_bytes = stream_youtube_audio(video_url)
