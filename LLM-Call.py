@@ -110,12 +110,10 @@ Generate a well-structured questionnaire based on the following content:
 #Step 6: Clean output
 def clean_questionnaire(raw_text):
     match = re.search(r"(### Multiple-Choice Questions.*?)$", raw_text, re.DOTALL)
-    if match:
-        cleaned_text = match.group(1) 
-    else:
-        cleaned_text = raw_text  
-    cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*(### Multiple-Choice Questions.*?$)", r"\1", cleaned_text, flags=re.DOTALL)
-    return cleaned_text.strip()
+    cleaned_text = match.group(1) if match else raw_text  
+    cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*Generate a well-structured questionnaire.*$", r"\1", cleaned_text, flags=re.DOTALL)
+    filtered_lines = "\n".join(line for line in cleaned_text.split("\n") if line.startswith("#### Question"))
+    return "\n".join(filtered_lines).strip()
 
 # Step 7: Full pipeline
 def process_stream(video_url):
