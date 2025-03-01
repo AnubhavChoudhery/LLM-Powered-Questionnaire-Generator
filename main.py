@@ -1,4 +1,5 @@
 #pip install openai-whisper yt-dlp ffmpeg-python transformers torch numpy reportlab
+
 import subprocess
 import numpy as np
 import ffmpeg
@@ -7,9 +8,11 @@ import re
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from io import BytesIO
 import torch
+from huggingface_hub import login
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from IPython.display import FileLink
+import textwrap
 
 model_name = "Qwen/Qwen2.5-7B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -124,15 +127,38 @@ def clean_questionnaire(raw_text):
     cleaned_text = match.group(1) if match else raw_text  
     #cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*Generate a well-structured questionnaire.*$", r"\1", cleaned_text, flags=re.DOTALL)
     return cleaned_text.strip()
+'''
+def clean_questionnaire(raw_text):
+    # Here we simply return the entire text.
+    return raw_text.strip()
+'''
 
 # Function to save text as a PDF using ReportLab
 def save_text_as_pdf(text, filename):
     c = canvas.Canvas(filename, pagesize=letter)
     width, height = letter
     margin = 50
+    available_width = width - 2 * margin
     text_object = c.beginText(margin, height - margin)
     text_object.setFont("Helvetica", 12)
-    
+
+    max_chars_per_line = 100
+
+    for paragraph in text.split("\n"):
+        # Wrap the paragraph using textwrap
+        wrapped_lines = textwrap.wrap(paragraph, width=max_chars_per_line)
+        if not wrapped_lines:
+            # For empty lines, add a blank line
+            text_object.textLine("")
+        for line in wrapped_lines:
+            text_object.textLine(line)
+            # Check for page break
+            if text_object.getY() < margin:
+                c.drawText(text_object)
+                c.showPage()
+                text_object = c.beginText(margin, height - margin)
+                text_object.setFont("Helvetica", 12)    
+    '''
     for line in text.splitlines():
         text_object.textLine(line)
         if text_object.getY() < margin:
@@ -140,6 +166,7 @@ def save_text_as_pdf(text, filename):
             c.showPage()
             text_object = c.beginText(margin, height - margin)
             text_object.setFont("Helvetica", 12)
+            '''
     
     c.drawText(text_object)
     c.save()
