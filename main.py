@@ -8,7 +8,6 @@ import re
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from io import BytesIO
 import torch
-from huggingface_hub import login
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from IPython.display import FileLink
