@@ -1,4 +1,4 @@
-# pip install openai-whisper yt-dlp ffmpeg-python transformers torch numpy
+#pip install openai-whisper yt-dlp ffmpeg-python transformers torch numpy reportlab
 
 import subprocess
 import numpy as np
@@ -8,7 +8,10 @@ import re
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from io import BytesIO
 import torch
-from huggingface_hub import login
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from IPython.display import FileLink
+import textwrap
 
 model_name = "Qwen/Qwen2.5-7B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -89,7 +92,7 @@ The questionnaire you generate must contain:
 Make sure to cover each and every type of question mentioned.
 Nothing else, no code. Stick strictly to the provided context.
 Also, provide the questions in a structured, well-formatted, sequential manner.
-Start question sections with ### Multiple-Choice Questions etc.
+Start question section on a new line, no special characters
 Generate a well-structured questionnaire based on the following content:
 "{summary}"
 """
@@ -104,19 +107,52 @@ Generate a well-structured questionnaire based on the following content:
         do_sample=True
     )
     output_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    print(output_text)
-    return clean_questionnaire(output_text)
+    #print(output_text)
+    print("Questionnaire generation completed.")
+    #return clean_questionnaire(output_text)
+    questionnaire = clean_questionnaire(output_text)
+    split_questionnaire = questionnaire.split(prompt)
+    print(split_questionnaire)
+    return split_questionnaire[0]
 
-#Step 6: Clean output
+
 def clean_questionnaire(raw_text):
     match = re.search(r"(### Multiple-Choice Questions.*?)$", raw_text, re.DOTALL)
     cleaned_text = match.group(1) if match else raw_text  
-    cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*Generate a well-structured questionnaire.*$", r"\1", cleaned_text, flags=re.DOTALL)
-    filtered_lines = "\n".join(line for line in cleaned_text.split("\n") if line.startswith("#### Question"))
-    return "\n".join(filtered_lines).strip()
+    #cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*Generate a well-structured questionnaire.*$", r"\1", cleaned_text, flags=re.DOTALL)
+    return cleaned_text.strip()
+
+# Function to save text as a PDF using ReportLab
+def save_text_as_pdf(text, filename):
+    c = canvas.Canvas(filename, pagesize=letter)
+    width, height = letter
+    margin = 50
+    available_width = width - 2 * margin
+    text_object = c.beginText(margin, height - margin)
+    text_object.setFont("Helvetica", 12)
+
+    max_chars_per_line = 100
+
+    for paragraph in text.split("\n"):
+        # Wrap the paragraph using textwrap
+        wrapped_lines = textwrap.wrap(paragraph, width=max_chars_per_line)
+        if not wrapped_lines:
+            # For empty lines, add a blank line
+            text_object.textLine("")
+        for line in wrapped_lines:
+            text_object.textLine(line)
+            # Check for page break
+            if text_object.getY() < margin:
+                c.drawText(text_object)
+                c.showPage()
+                text_object = c.beginText(margin, height - margin)
+                text_object.setFont("Helvetica", 12)    
+    
+    c.drawText(text_object)
+    c.save()
 
 # Step 7: Full pipeline
-def process_stream(video_url):
+def process_stream(video_url, output_pdf="questionnaire.pdf"):
     print("Streaming audio...")
     audio_bytes = stream_youtube_audio(video_url)
     if not audio_bytes:
@@ -140,10 +176,20 @@ def process_stream(video_url):
 
     print("Generating questionnaire...")
     questionnaire = generate_questionnaire(summary)
-    
-    print("\nGenerated Questionnaire:")
-    print(questionnaire)
-    return questionnaire
 
-youtube_url = "https://www.youtube.com/watch?v=L2YiNu22saU"  # Replace with your YouTube video link
-process_stream(youtube_url)
+    print("Converting questionnaire to PDF...")
+    save_text_as_pdf(questionnaire, output_pdf)
+
+    print(f"\nPDF generated: {output_pdf}")
+    return output_pdf
+    
+    #print("\nGenerated Questionnaire:")
+    #print(questionnaire)
+    #return questionnaire
+
+youtube_url = "https://www.youtube.com/watch?v=L2YiNu22saU"  
+pdf_file = process_stream(youtube_url)
+
+if pdf_file:
+    # Display a download link in the notebook (Kaggle environment)
+    display(FileLink(pdf_file))
