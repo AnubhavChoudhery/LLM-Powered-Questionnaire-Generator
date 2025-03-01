@@ -65,16 +65,52 @@ def transcribe_audio_numpy(audio_data):
     print("Transcription completed.")
     return result["text"]
 
-# Step 4: Summarization
-def summarize_text(transcription, max_tokens=512):
-    """
-    Summarizes the transcription to reduce context size before question generation.
-    """
-    if len(transcription.split()) < 100:
-        return transcription
+def chunk_text(text, max_words=512):
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), max_words):
+        chunk = " ".join(words[i:i+max_words])
+        chunks.append(chunk)
+    return chunks
 
-    summary = summarizer(transcription, max_length=max_tokens, min_length=100, do_sample=False)
-    return summary[0]['summary_text']
+
+def final_summarize_cpu(text, max_length=150, min_length=50):
+    # Create a CPU summarizer instance
+    cpu_summarizer = pipeline("summarization", model="facebook/bart-large-cnn", device=-1)
+    # Explicitly tokenize with truncation; set a max_length that fits the model (e.g. 1024 tokens)
+    inputs = cpu_summarizer.tokenizer(text, return_tensors="pt", truncation=True, max_length=1024)
+    inputs = {k: v.to("cpu") for k, v in inputs.items()}
+    # Generate summary
+    summary_ids = cpu_summarizer.model.generate(**inputs, max_length=max_length, min_length=min_length, do_sample=False)
+    final_summary = cpu_summarizer.tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return final_summary
+    
+# Step 4: Summarization with chunking for long transcriptions
+def summarize_text(transcription, max_tokens=512):
+    if len(transcription.split()) < 1000:
+        summary = summarizer(transcription, max_length=max_tokens, min_length=100, do_sample=False)
+        return summary[0]['summary_text']
+
+    # For longer transcriptions, split into chunks, summarize each, then combine summaries.
+    print("Transcription too long; splitting into chunks...")
+    chunks = chunk_text(transcription, max_words=512)
+    chunk_summaries = []
+    for i, chunk in enumerate(chunks):
+        print(f"Summarizing chunk {i+1}/{len(chunks)}...")
+        try:
+            summary = summarizer(chunk, max_length=max_tokens, min_length=100, do_sample=False)
+            chunk_summaries.append(summary[0]['summary_text'])
+        except Exception as e:
+            print(f"Error summarizing chunk {i+1}: {e}")
+            chunk_summaries.append("")  # Optionally handle failed chunks
+    combined_summary = " ".join(chunk_summaries)
+    # Use the CPU-based final summarization with explicit tokenization & truncation.
+    try:
+        final_summary = final_summarize_cpu(combined_summary, max_length=150, min_length=50)
+        return final_summary
+    except Exception as e:
+        print(f"Error in final summarization: {e}")
+        return combined_summary
 
 # Step 5: Generate questionnaire
 def generate_questionnaire(summary):
@@ -111,34 +147,21 @@ Generate a well-structured questionnaire based on the following content:
     print("Questionnaire generation completed.")
     #return clean_questionnaire(output_text)
     return clean_questionnaire(output_text)
-'''    
+   
 #Step 6: Clean output
-def clean_questionnaire(raw_text):
-    match = re.search(r"(### Multiple-Choice Questions.*?)$", raw_text, re.DOTALL)
-    cleaned_text = match.group(1) if match else raw_text  
-    cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*Generate a well-structured questionnaire.*$", r"\1", cleaned_text, flags=re.DOTALL)
-    filtered_lines = "\n".join(line for line in cleaned_text.split("\n") if line.startswith("#### Question"))
-    return "\n".join(filtered_lines).strip()
-    '''
-
 def clean_questionnaire(raw_text):
     match = re.search(r"(### Multiple-Choice Questions.*?)$", raw_text, re.DOTALL)
     cleaned_text = match.group(1) if match else raw_text  
     #cleaned_text = re.sub(r"(### Multiple-Choice Questions.*?)\s*Generate a well-structured questionnaire.*$", r"\1", cleaned_text, flags=re.DOTALL)
     return cleaned_text.strip()
-'''
-def clean_questionnaire(raw_text):
-    # Here we simply return the entire text.
-    return raw_text.strip()
-'''
 
 # Function to save text as a PDF using ReportLab
 def save_text_as_pdf(text, filename):
-    c = canvas.Canvas(filename, pagesize=letter)
+    pdf = canvas.Canvas(filename, pagesize=letter)
     width, height = letter
     margin = 50
     available_width = width - 2 * margin
-    text_object = c.beginText(margin, height - margin)
+    text_object = pdf.beginText(margin, height - margin)
     text_object.setFont("Helvetica", 12)
 
     max_chars_per_line = 100
@@ -153,22 +176,13 @@ def save_text_as_pdf(text, filename):
             text_object.textLine(line)
             # Check for page break
             if text_object.getY() < margin:
-                c.drawText(text_object)
-                c.showPage()
-                text_object = c.beginText(margin, height - margin)
+                pdf.drawText(text_object)
+                pdf.showPage()
+                text_object = pdf.beginText(margin, height - margin)
                 text_object.setFont("Helvetica", 12)    
-    '''
-    for line in text.splitlines():
-        text_object.textLine(line)
-        if text_object.getY() < margin:
-            c.drawText(text_object)
-            c.showPage()
-            text_object = c.beginText(margin, height - margin)
-            text_object.setFont("Helvetica", 12)
-            '''
     
-    c.drawText(text_object)
-    c.save()
+    pdf.drawText(text_object)
+    pdf.save()
 
 # Step 7: Full pipeline
 def process_stream(video_url, output_pdf="questionnaire.pdf"):
@@ -202,11 +216,7 @@ def process_stream(video_url, output_pdf="questionnaire.pdf"):
     print(f"\nPDF generated: {output_pdf}")
     return output_pdf
     
-    #print("\nGenerated Questionnaire:")
-    #print(questionnaire)
-    #return questionnaire
-
-youtube_url = "https://www.youtube.com/watch?v=L2YiNu22saU"  # Replace with your YouTube video link
+youtube_url = "https://www.youtube.com/watch?v=CVfnkM44Urs&list=PLU630Cd0ZQCMeQiSvU7DJmDJDitdE7m7r&index=2"  # Replace with your YouTube video link
 pdf_file = process_stream(youtube_url)
 
 if pdf_file:
